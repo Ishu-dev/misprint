@@ -1,10 +1,14 @@
 # Misprint
 
+**Play: https://ishu-dev.github.io/misprint/**
+
 Top-down survival prototype in a two-colour risograph style. Vite + TypeScript + Phaser 3.90.
 
     npm install
     npm run dev        # http://localhost:5173 (or the port Vite prints)
-    npm run build      # typecheck + production build into dist/
+    npm run build      # typecheck + production build into dist/ (base path /misprint/)
+
+Pushing to `main` deploys to GitHub Pages via `.github/workflows/pages.yml`.
 
 ## Controls
 - WASD / arrows: roll
