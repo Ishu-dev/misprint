@@ -15,6 +15,8 @@ interface Enemy {
   hp: number;
   dead: boolean;
   flashUntil: number;
+  nextShift: number; // shifter only: when it next swaps colour
+  immuneUntil: number; // ignores ink until then (fresh splitter runts)
   sprite: Phaser.GameObjects.Image;
   shadow: Phaser.GameObjects.Image;
 }
@@ -220,7 +222,13 @@ export class ArenaScene extends Phaser.Scene {
   private spawnOne(): void {
     const s = this.elapsed;
     const roll = Math.random();
-    const kind: Kind = s > 90 && roll < 0.12 ? 'brute' : s > 40 && roll < 0.35 ? 'runt' : 'blob';
+    // New kinds join as the run goes on; later rolls fall through to plain blobs.
+    const kind: Kind =
+      s > 90 && roll < 0.12 ? 'brute'
+      : s > 75 && roll < 0.27 ? 'splitter'
+      : s > 55 && roll < 0.42 ? 'shifter'
+      : s > 40 && roll < 0.6 ? 'runt'
+      : 'blob';
     const def = KINDS[kind];
     let x = 0;
     let y = 0;
@@ -232,11 +240,37 @@ export class ArenaScene extends Phaser.Scene {
       if (Math.hypot(x - this.p.x, y - this.p.y) > 220) break;
     }
     const color: InkColor = Math.random() < 0.5 ? INK.PINK : INK.TEAL;
-    const shadow = this.add.image(x + 3, y + 3, 'blob').setScale(def.scale).setTint(COLORS.ink).setAlpha(0.22).setDepth(2);
-    const sprite = this.add.image(x, y, 'blob').setScale(def.scale).setTint(hexOf(color)).setDepth(3);
+    this.addEnemy(kind, color, x, y);
+  }
+
+  private addEnemy(kind: Kind, color: InkColor, x: number, y: number): Enemy {
+    const def = KINDS[kind];
+    const now = this.elapsed * 1000;
+    const shadow = this.add.image(x + 3, y + 3, def.tex).setScale(def.scale).setTint(COLORS.ink).setAlpha(0.22).setDepth(2);
+    const sprite = this.add.image(x, y, def.tex).setScale(def.scale).setTint(hexOf(color)).setDepth(3);
     sprite.setAlpha(0);
     this.tweens.add({ targets: sprite, alpha: 1, duration: 250 });
-    this.enemies.push({ kind, color, x, y, r: def.r, speed: def.speed * Phaser.Math.FloatBetween(0.9, 1.1), hp: def.hp, dead: false, flashUntil: 0, sprite, shadow });
+    const e: Enemy = {
+      kind,
+      color,
+      x,
+      y,
+      r: def.r,
+      speed: def.speed * Phaser.Math.FloatBetween(0.9, 1.1),
+      hp: def.hp,
+      dead: false,
+      flashUntil: 0,
+      nextShift: now + this.shiftPeriod(),
+      immuneUntil: 0,
+      sprite,
+      shadow,
+    };
+    this.enemies.push(e);
+    return e;
+  }
+
+  private shiftPeriod(): number {
+    return this.s.shiftEveryMs + Phaser.Math.Between(-400, 400);
   }
 
   private updateEnemies(dt: number, now: number): void {
@@ -244,9 +278,14 @@ export class ArenaScene extends Phaser.Scene {
     const list = this.enemies;
     for (const e of list) {
       if (e.dead) continue;
+      if (e.kind === 'shifter' && now >= e.nextShift) {
+        e.color = other(e.color);
+        e.nextShift = now + this.shiftPeriod();
+        sfx.shift();
+      }
       // Ink underfoot: the opposite colour (or violet) burns and slows.
       const under = this.grid.at(e.x, e.y);
-      const burning = under === INK.VIOLET || under === other(e.color);
+      const burning = now >= e.immuneUntil && (under === INK.VIOLET || under === other(e.color));
       if (burning) {
         e.hp -= this.s.inkDps * dt;
         if (e.hp <= 0) {
@@ -299,7 +338,10 @@ export class ArenaScene extends Phaser.Scene {
       e.sprite.setPosition(e.x, e.y + bob);
       e.shadow.setPosition(e.x + 3, e.y + 3);
       if (now < e.flashUntil) e.sprite.setTintFill(0xffffff);
-      else e.sprite.setTint(hexOf(e.color));
+      else if (e.kind === 'shifter' && e.nextShift - now < this.s.shiftWarnMs && Math.floor(now / 80) % 2 === 0) {
+        // Warning flicker: shows the colour it is about to become.
+        e.sprite.setTint(hexOf(other(e.color)));
+      } else e.sprite.setTint(hexOf(e.color));
     }
   }
 
@@ -326,6 +368,23 @@ export class ArenaScene extends Phaser.Scene {
     }
     e.sprite.destroy();
     e.shadow.destroy();
+    if (e.kind === 'splitter') this.split(e, now);
+  }
+
+  /** Two runts of the opposite colour pop out sideways. They ignore ink briefly so they do not die on landing. */
+  private split(e: Enemy, now: number): void {
+    const toward = Math.atan2(this.p.y - e.y, this.p.x - e.x);
+    for (const side of [-1, 1]) {
+      const a = toward + side * (Math.PI / 2);
+      const r = this.addEnemy('runt', other(e.color), e.x, e.y);
+      r.immuneUntil = now + this.s.splitImmuneMs;
+      r.sprite.setAlpha(1);
+      this.tweens.killTweensOf(r.sprite);
+      const hop = 28;
+      r.x = Phaser.Math.Clamp(e.x + Math.cos(a) * hop, r.r, W - r.r);
+      r.y = Phaser.Math.Clamp(e.y + Math.sin(a) * hop, r.r, H - r.r);
+      this.tweens.add({ targets: r.sprite, scale: { from: 0.2, to: KINDS.runt.scale }, duration: 180, ease: 'Back.Out' });
+    }
   }
 
   // ---------- overprint ----------
@@ -344,7 +403,7 @@ export class ArenaScene extends Phaser.Scene {
     // Small patches still explode (nothing vanishes silently) but hit softer.
     const damage = this.s.blastDamage * Math.min(1, 0.4 + b.cells / this.s.fullBlastCells);
     let hit = 0;
-    for (const e of this.enemies) {
+    for (const e of this.enemies.slice()) {
       if (e.dead) continue;
       if (Math.hypot(e.x - b.x, e.y - b.y) > b.r + e.r) continue;
       e.hp -= damage;

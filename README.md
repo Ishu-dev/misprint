@@ -16,6 +16,7 @@ Top-down survival prototype in a two-colour risograph style. Vite + TypeScript +
 - Ink swap: blobs of your current colour cannot hurt you.
 - Roller trail: your ink burns and slows blobs of the other colour. Ink fades after 7 s.
 - Overprint: rolling over the other colour turns it violet. A violet patch explodes 0.7 s after you stop adding to it (at most 1.5 s more if you keep going). Small patches still explode but hit softer. Ink under 0.35 s old is repainted, not overprinted. Dead blobs splat their own ink onto bare paper only.
+- Enemies: blob, runt (from 0:40), shifter (0:55, swaps colour about every 3 s and flickers 0.6 s before), splitter (1:15, bursts into two runts of the opposite colour), brute (1:30).
 - Waves: every 40 s the arena freezes and you pick 1 of 3 upgrades (keys 1/2/3 or click).
 
 ## Upgrades

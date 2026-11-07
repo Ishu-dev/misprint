@@ -99,6 +99,15 @@ class Sfx {
     this.tone(ctx, 'square', up ? 1040 : 700, up ? 1400 : 460, 0.05, this.env(ctx, 0.08, 0.005, 0.06, t + 0.04), t + 0.04);
   }
 
+  /** Shifter changes ink: a quiet wobble, rate-limited because many shifters can flip together. */
+  private lastShift = 0;
+  shift(): void {
+    const ctx = this.ready();
+    if (!ctx || ctx.currentTime - this.lastShift < 0.08) return;
+    this.lastShift = ctx.currentTime;
+    this.tone(ctx, 'sine', 300, 600, 0.12, this.env(ctx, 0.12, 0.01, 0.12));
+  }
+
   /** Blob burst: wet noise squelch plus a small pitched pop. Bigger blobs sound lower. */
   splat(kind: Kind): void {
     const ctx = this.ready();
@@ -107,7 +116,7 @@ class Sfx {
     const now = ctx.currentTime;
     if (now - this.lastSplat < 0.03) return;
     this.lastSplat = now;
-    const pitch = kind === 'brute' ? 0.5 : kind === 'runt' ? 1.6 : 1;
+    const pitch = { brute: 0.5, splitter: 0.7, blob: 1, shifter: 1.2, runt: 1.6 }[kind];
     const j = 0.85 + Math.random() * 0.3;
     this.hiss(ctx, 'bandpass', 2400 * pitch * j, 300 * pitch, 0.12, this.env(ctx, 0.5, 0.004, 0.12));
     this.tone(ctx, 'sine', 420 * pitch * j, 110 * pitch, 0.09, this.env(ctx, 0.4, 0.003, 0.09));

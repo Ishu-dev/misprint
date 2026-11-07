@@ -38,6 +38,9 @@ export const T = {
   runSeconds: 600, // a full print run is 10 minutes
   waveSeconds: 40, // an upgrade pick comes at the end of every wave
   chainSplat: 0, // 1 once the Wet Splat upgrade lets dead blobs overprint
+  shiftEveryMs: 3000, // shifter colour period (plus or minus 400 ms)
+  shiftWarnMs: 600, // shifter flickers this long before it swaps
+  splitImmuneMs: 450, // fresh runts from a splitter ignore ink this long
 };
 
 /** Per-run copy of T. Upgrades change this, never T itself. */
@@ -45,9 +48,13 @@ export type Stats = typeof T;
 export const freshStats = (): Stats => ({ ...T });
 
 export const KINDS = {
-  blob: { r: 13, speed: 75, hp: 3, scale: 1, splat: 16 },
-  runt: { r: 9, speed: 125, hp: 1, scale: 0.7, splat: 11 },
-  brute: { r: 24, speed: 42, hp: 12, scale: 1.8, splat: 30 },
+  blob: { r: 13, speed: 75, hp: 3, scale: 1, splat: 16, tex: 'blob' },
+  runt: { r: 9, speed: 125, hp: 1, scale: 0.7, splat: 11, tex: 'blob' },
+  brute: { r: 24, speed: 42, hp: 12, scale: 1.8, splat: 30, tex: 'blob' },
+  // Swaps ink every few seconds, so a safe neighbour can turn on you.
+  shifter: { r: 13, speed: 82, hp: 4, scale: 1.05, splat: 16, tex: 'shifter' },
+  // Bursts into two runts of the opposite colour when it dies.
+  splitter: { r: 16, speed: 58, hp: 5, scale: 1.25, splat: 20, tex: 'splitter' },
 } as const;
 export type Kind = keyof typeof KINDS;
 
