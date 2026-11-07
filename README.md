@@ -6,7 +6,7 @@ Top-down survival prototype in a two-colour risograph style. Vite + TypeScript +
 
     npm install
     npm run dev        # http://localhost:5173 (or the port Vite prints)
-    npm run build      # typecheck + production build into dist/ (base path /misprint/)
+    npm run build      # typecheck + production build into dist/ (relative base, works on GitHub Pages and itch.io)
 
 Pushing to `main` deploys to GitHub Pages via `.github/workflows/pages.yml`.
 
