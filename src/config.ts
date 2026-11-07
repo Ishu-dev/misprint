@@ -26,6 +26,8 @@ export const T = {
   rollerRadius: 11,
   inkLifeMs: 7000, // pink/teal ink fades after this
   fuseMs: 700, // violet overprint explodes this long after it first appears
+  overprintMinAgeMs: 350, // ink younger than this is repainted, not overprinted (stops swap-at-feet blasts)
+  minBlastCells: 6, // smaller violet patches fizzle without exploding
   inkDps: 2.2, // damage per second to an enemy standing on the opposite ink
   inkSlow: 0.55, // speed multiplier on the opposite ink
   blastDamage: 6,

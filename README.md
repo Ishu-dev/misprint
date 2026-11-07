@@ -15,6 +15,6 @@ Top-down survival prototype in a two-colour risograph style. Vite + TypeScript +
 ## Rules in the prototype
 - Ink swap: blobs of your current colour cannot hurt you.
 - Roller trail: your ink burns and slows blobs of the other colour. Ink fades after 7 s.
-- Overprint: rolling over the other colour turns it violet. A violet cluster explodes 0.7 s after it forms. Dead blobs splat their own ink, so blasts can chain.
+- Overprint: rolling over the other colour turns it violet. A violet cluster of 6+ cells explodes 0.7 s after it forms; smaller ones fizzle. Ink under 0.35 s old is repainted, not overprinted. Dead blobs splat their own ink onto bare paper only.
 
 All tuning numbers are in `src/config.ts` (`T` and `KINDS`). Art is generated from shapes in `src/textures.ts`; no asset files yet.

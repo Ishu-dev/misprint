@@ -287,8 +287,9 @@ export class ArenaScene extends Phaser.Scene {
     e.dead = true;
     this.kills++;
     sfx.splat(e.kind);
-    // The blob bursts into its own ink. Landing on the other colour starts a chain.
-    this.grid.paintCircle(e.x, e.y, KINDS[e.kind].splat, e.color, now);
+    // The blob bursts into its own ink. It never overprints: otherwise every ink kill
+    // lands on the opposite ink it died on and sets off a blast that empties the arena.
+    this.grid.paintCircle(e.x, e.y, KINDS[e.kind].splat, e.color, now, false);
     for (let i = 0; i < 6; i++) {
       const a = Math.random() * Math.PI * 2;
       const dot = this.add.circle(e.x, e.y, Phaser.Math.Between(2, 4), hexOf(e.color)).setDepth(5);

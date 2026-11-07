@@ -34,8 +34,11 @@ export class InkGrid {
     return this.cells[cy * this.cols + cx];
   }
 
-  /** Paint a disc. Opposite ink turns violet and starts a fuse. */
-  paintCircle(x: number, y: number, r: number, color: InkColor, now: number): void {
+  /**
+   * Paint a disc. Opposite ink turns violet and starts a fuse, unless it was laid
+   * moments ago (then it is just repainted). With overprint=false, existing ink is left alone.
+   */
+  paintCircle(x: number, y: number, r: number, color: InkColor, now: number, overprint = true): void {
     const x0 = Math.max(0, Math.floor((x - r) / CELL));
     const x1 = Math.min(this.cols - 1, Math.floor((x + r) / CELL));
     const y0 = Math.max(0, Math.floor((y - r) / CELL));
@@ -50,6 +53,10 @@ export class InkGrid {
         const cur = this.cells[i];
         if (cur === INK.VIOLET) continue;
         if (cur === INK.NONE || cur === color) {
+          this.cells[i] = color;
+        } else if (!overprint) {
+          continue;
+        } else if (now - this.stamp[i] < T.overprintMinAgeMs) {
           this.cells[i] = color;
         } else {
           this.cells[i] = INK.VIOLET;
@@ -68,7 +75,10 @@ export class InkGrid {
       if (c === INK.NONE) continue;
       const age = now - this.stamp[i];
       if (c === INK.VIOLET) {
-        if (age >= T.fuseMs) blasts.push(this.detonate(i));
+        if (age >= T.fuseMs) {
+          const b = this.detonate(i);
+          if (b) blasts.push(b);
+        }
       } else if (age >= T.inkLifeMs) {
         this.cells[i] = INK.NONE;
       }
@@ -76,8 +86,8 @@ export class InkGrid {
     return blasts;
   }
 
-  /** Flood-fill the connected violet cluster from i, clear it, return one blast. */
-  private detonate(start: number): Blast {
+  /** Flood-fill the connected violet cluster from i and clear it. Returns null if it fizzles. */
+  private detonate(start: number): Blast | null {
     const { cols, rows, cells, stack, seen } = this;
     seen.fill(0);
     let top = 0;
@@ -99,6 +109,10 @@ export class InkGrid {
       if (cx < cols - 1) push(i + 1);
       if (cy > 0) push(i - cols);
       if (cy < rows - 1) push(i + cols);
+    }
+    if (members.length < T.minBlastCells) {
+      for (const i of members) cells[i] = INK.NONE;
+      return null;
     }
     let sx = 0;
     let sy = 0;
