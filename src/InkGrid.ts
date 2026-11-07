@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CELL, COLORS, INK, T, type InkColor } from './config';
+import { CELL, COLORS, INK, type InkColor, type Stats } from './config';
 
 export interface Blast {
   x: number;
@@ -17,7 +17,7 @@ export class InkGrid {
   private seen: Uint8Array;
   private stack: Int32Array;
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, private s: Stats) {
     this.cols = Math.ceil(width / CELL);
     this.rows = Math.ceil(height / CELL);
     const n = this.cols * this.rows;
@@ -56,7 +56,7 @@ export class InkGrid {
           this.cells[i] = color;
         } else if (!overprint) {
           continue;
-        } else if (now - this.stamp[i] < T.overprintMinAgeMs) {
+        } else if (now - this.stamp[i] < this.s.overprintMinAgeMs) {
           this.cells[i] = color;
         } else {
           this.cells[i] = INK.VIOLET;
@@ -66,30 +66,38 @@ export class InkGrid {
     }
   }
 
-  /** Fade old ink and detonate violet clusters whose fuse has run out. */
+  /**
+   * Fade old ink and detonate violet patches. A patch's fuse counts from its newest cell,
+   * so it waits while you are still rolling over the old trail, then goes off as one blast.
+   * A patch kept growing still goes off fuseHoldMaxMs after its oldest cell's fuse.
+   */
   update(now: number): Blast[] {
     const blasts: Blast[] = [];
-    const n = this.cells.length;
-    for (let i = 0; i < n; i++) {
-      const c = this.cells[i];
+    const { cells, stamp, seen, s } = this;
+    seen.fill(0);
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
       if (c === INK.NONE) continue;
-      const age = now - this.stamp[i];
-      if (c === INK.VIOLET) {
-        if (age >= T.fuseMs) {
-          const b = this.detonate(i);
-          if (b) blasts.push(b);
-        }
-      } else if (age >= T.inkLifeMs) {
-        this.cells[i] = INK.NONE;
+      if (c !== INK.VIOLET) {
+        if (now - stamp[i] >= s.inkLifeMs) cells[i] = INK.NONE;
+        continue;
       }
+      if (seen[i] || now - stamp[i] < s.fuseMs) continue;
+      const members = this.flood(i);
+      let newest = 0;
+      let oldest = Infinity;
+      for (const j of members) {
+        newest = Math.max(newest, stamp[j]);
+        oldest = Math.min(oldest, stamp[j]);
+      }
+      if (now - newest >= s.fuseMs || now - oldest >= s.fuseMs + s.fuseHoldMaxMs) blasts.push(this.explode(members));
     }
     return blasts;
   }
 
-  /** Flood-fill the connected violet cluster from i and clear it. Returns null if it fizzles. */
-  private detonate(start: number): Blast | null {
+  /** All violet cells connected to start. Marks them seen for this update. */
+  private flood(start: number): number[] {
     const { cols, rows, cells, stack, seen } = this;
-    seen.fill(0);
     let top = 0;
     stack[top++] = start;
     seen[start] = 1;
@@ -110,10 +118,12 @@ export class InkGrid {
       if (cy > 0) push(i - cols);
       if (cy < rows - 1) push(i + cols);
     }
-    if (members.length < T.minBlastCells) {
-      for (const i of members) cells[i] = INK.NONE;
-      return null;
-    }
+    return members;
+  }
+
+  /** Clear a violet patch and turn it into one blast at its centre. */
+  private explode(members: number[]): Blast {
+    const { cols, cells } = this;
     let sx = 0;
     let sy = 0;
     for (const i of members) {
@@ -129,7 +139,7 @@ export class InkGrid {
       far = Math.max(far, Math.hypot(dx, dy));
       cells[i] = INK.NONE;
     }
-    return { x, y, r: Math.min(T.blastMax, far + T.blastPad), cells: members.length };
+    return { x, y, r: Math.min(this.s.blastMax, far + this.s.blastPad), cells: members.length };
   }
 
   /** Halftone look: each cell is a dot that shrinks as the ink fades. */
@@ -152,7 +162,7 @@ export class InkGrid {
         if (ink === INK.VIOLET) {
           r = CELL * 0.78 * (1 + 0.18 * Math.sin(now / 35 + i));
         } else {
-          const t = Math.min(1, age / T.inkLifeMs);
+          const t = Math.min(1, age / this.s.inkLifeMs);
           r = CELL * (0.74 - 0.56 * t * t);
         }
         g.fillCircle(x, y, r);

@@ -15,6 +15,10 @@ Top-down survival prototype in a two-colour risograph style. Vite + TypeScript +
 ## Rules in the prototype
 - Ink swap: blobs of your current colour cannot hurt you.
 - Roller trail: your ink burns and slows blobs of the other colour. Ink fades after 7 s.
-- Overprint: rolling over the other colour turns it violet. A violet cluster of 6+ cells explodes 0.7 s after it forms; smaller ones fizzle. Ink under 0.35 s old is repainted, not overprinted. Dead blobs splat their own ink onto bare paper only.
+- Overprint: rolling over the other colour turns it violet. A violet patch explodes 0.7 s after you stop adding to it (at most 1.5 s more if you keep going). Small patches still explode but hit softer. Ink under 0.35 s old is repainted, not overprinted. Dead blobs splat their own ink onto bare paper only.
+- Waves: every 40 s the arena freezes and you pick 1 of 3 upgrades (keys 1/2/3 or click).
 
-All tuning numbers are in `src/config.ts` (`T` and `KINDS`). Art is generated from shapes in `src/textures.ts`; no asset files yet.
+## Upgrades
+Wide Roller, Quick Fuse, Light Feet, Archival Ink, Caustic Ink, Bleed Edge (3 levels each), Heavy Violet, Hair Trigger (2 each), Spare Drop (3), Wet Splat (1: dead blobs overprint, so blasts chain). Defined in `src/upgrades.ts`; they change a per-run copy of the tuning (`freshStats()` in `src/config.ts`).
+
+Base tuning is in `src/config.ts` (`T` and `KINDS`). Art is generated from shapes in `src/textures.ts`; no asset files yet.

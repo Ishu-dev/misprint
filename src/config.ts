@@ -26,8 +26,9 @@ export const T = {
   rollerRadius: 11,
   inkLifeMs: 7000, // pink/teal ink fades after this
   fuseMs: 700, // violet overprint explodes this long after it first appears
+  fuseHoldMaxMs: 1500, // a patch you keep growing still goes off at most this long after the fuse
   overprintMinAgeMs: 350, // ink younger than this is repainted, not overprinted (stops swap-at-feet blasts)
-  minBlastCells: 6, // smaller violet patches fizzle without exploding
+  fullBlastCells: 15, // patches this big deal full blast damage; smaller ones deal less
   inkDps: 2.2, // damage per second to an enemy standing on the opposite ink
   inkSlow: 0.55, // speed multiplier on the opposite ink
   blastDamage: 6,
@@ -35,7 +36,13 @@ export const T = {
   blastMax: 220,
   maxEnemies: 180,
   runSeconds: 600, // a full print run is 10 minutes
+  waveSeconds: 40, // an upgrade pick comes at the end of every wave
+  chainSplat: 0, // 1 once the Wet Splat upgrade lets dead blobs overprint
 };
+
+/** Per-run copy of T. Upgrades change this, never T itself. */
+export type Stats = typeof T;
+export const freshStats = (): Stats => ({ ...T });
 
 export const KINDS = {
   blob: { r: 13, speed: 75, hp: 3, scale: 1, splat: 16 },

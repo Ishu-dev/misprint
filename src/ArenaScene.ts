@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { COLORS, FONT, H, INK, KINDS, T, W, hexOf, other, type InkColor, type Kind } from './config';
+import { COLORS, FONT, H, INK, KINDS, W, freshStats, hexOf, other, type InkColor, type Kind, type Stats } from './config';
+import { UPGRADES, type Upgrade } from './upgrades';
 import { InkGrid, type Blast } from './InkGrid';
 import { makeTextures } from './textures';
 import { sfx } from './sfx';
@@ -53,10 +54,20 @@ export class ArenaScene extends Phaser.Scene {
   private bestBlast = 0;
   private over = false;
 
+  private s!: Stats;
+  private levels: Record<string, number> = {};
+  private wave = 1;
+  private waveEnd = 0;
+  private picking = false;
+  private picker: Phaser.GameObjects.Container | null = null;
+  private choices: Upgrade[] = [];
+
   private hudRing!: Phaser.GameObjects.Arc;
   private hudDrops: Phaser.GameObjects.Arc[] = [];
   private hudTime!: Phaser.GameObjects.Text;
   private hudKills!: Phaser.GameObjects.Text;
+  private hudWave!: Phaser.GameObjects.Text;
+  private hudWaveBar!: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super('arena');
@@ -70,12 +81,18 @@ export class ArenaScene extends Phaser.Scene {
     this.kills = 0;
     this.bestBlast = 0;
     this.over = false;
+    this.s = freshStats();
+    this.levels = {};
+    this.wave = 1;
+    this.waveEnd = this.s.waveSeconds;
+    this.picking = false;
+    this.picker = null;
 
     this.add.image(0, 0, 'paper').setOrigin(0).setDepth(0);
-    this.grid = new InkGrid(W, H);
+    this.grid = new InkGrid(W, H, this.s);
     this.inkGfx = this.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.MULTIPLY);
 
-    this.p = { x: W / 2, y: H / 2, color: INK.PINK, hp: T.playerHp, angle: 0, invulnUntil: 0, swapReadyAt: 0 };
+    this.p = { x: W / 2, y: H / 2, color: INK.PINK, hp: this.s.playerHp, angle: 0, invulnUntil: 0, swapReadyAt: 0 };
     this.bodyShadow = this.add.image(0, 0, 'player').setTint(COLORS.ink).setAlpha(0.25).setDepth(2);
     this.roller = this.add.image(0, 0, 'roller').setDepth(4);
     this.body = this.add.image(0, 0, 'player').setDepth(4);
@@ -86,6 +103,9 @@ export class ArenaScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.swap());
     kb.on('keydown-SHIFT', () => this.swap());
     kb.on('keydown-M', () => sfx.toggleMute());
+    kb.on('keydown-ONE', () => this.pick(0));
+    kb.on('keydown-TWO', () => this.pick(1));
+    kb.on('keydown-THREE', () => this.pick(2));
     kb.on('keydown-R', () => {
       if (this.over) this.scene.restart();
     });
@@ -105,7 +125,7 @@ export class ArenaScene extends Phaser.Scene {
   // ---------- frame ----------
 
   update(_time: number, delta: number): void {
-    if (this.over) return;
+    if (this.over || this.picking) return;
     const dt = Math.min(delta, 50) / 1000;
     this.elapsed += dt;
     const now = this.elapsed * 1000;
@@ -122,16 +142,17 @@ export class ArenaScene extends Phaser.Scene {
     this.syncPlayer();
     this.updateHud();
 
-    if (this.elapsed >= T.runSeconds) this.endRun(true);
+    if (this.elapsed >= this.s.runSeconds) this.endRun(true);
+    else if (this.elapsed >= this.waveEnd) this.openPicker();
   }
 
   // ---------- player ----------
 
   private swap(): void {
-    if (this.over) return;
+    if (this.over || this.picking) return;
     const now = this.elapsed * 1000;
     if (now < this.p.swapReadyAt) return;
-    this.p.swapReadyAt = now + T.swapCooldownMs;
+    this.p.swapReadyAt = now + this.s.swapCooldownMs;
     this.p.color = other(this.p.color);
     sfx.swap(this.p.color);
     this.tweens.add({ targets: this.body, scale: { from: 1.35, to: 1 }, duration: 160 });
@@ -145,11 +166,11 @@ export class ArenaScene extends Phaser.Scene {
     const len = Math.hypot(dx, dy);
     dx /= len;
     dy /= len;
-    const m = T.playerRadius;
+    const m = this.s.playerRadius;
     const ox = this.p.x;
     const oy = this.p.y;
-    this.p.x = Phaser.Math.Clamp(ox + dx * T.playerSpeed * dt, m, W - m);
-    this.p.y = Phaser.Math.Clamp(oy + dy * T.playerSpeed * dt, m, H - m);
+    this.p.x = Phaser.Math.Clamp(ox + dx * this.s.playerSpeed * dt, m, W - m);
+    this.p.y = Phaser.Math.Clamp(oy + dy * this.s.playerSpeed * dt, m, H - m);
     this.p.angle = Math.atan2(dy, dx);
 
     // Roll the drum along the path in small steps so fast frames leave no gaps.
@@ -159,7 +180,7 @@ export class ArenaScene extends Phaser.Scene {
       const t = i / steps;
       const rx = ox + (this.p.x - ox) * t + Math.cos(this.p.angle) * 12;
       const ry = oy + (this.p.y - oy) * t + Math.sin(this.p.angle) * 12;
-      this.grid.paintCircle(rx, ry, T.rollerRadius, this.p.color, now);
+      this.grid.paintCircle(rx, ry, this.s.rollerRadius, this.p.color, now);
     }
   }
 
@@ -176,7 +197,7 @@ export class ArenaScene extends Phaser.Scene {
     if (now < this.p.invulnUntil) return;
     this.p.hp -= 1;
     sfx.hit();
-    this.p.invulnUntil = now + T.invulnMs;
+    this.p.invulnUntil = now + this.s.invulnMs;
     this.cameras.main.shake(140, 0.008);
     // Knock the attacker back so the player can escape.
     const a = Math.atan2(e.y - this.p.y, e.x - this.p.x);
@@ -193,7 +214,7 @@ export class ArenaScene extends Phaser.Scene {
     const s = this.elapsed;
     this.spawnTimer = spawnInterval(s);
     const group = 1 + Math.floor(s / 60);
-    for (let i = 0; i < group && this.enemies.length < T.maxEnemies; i++) this.spawnOne();
+    for (let i = 0; i < group && this.enemies.length < this.s.maxEnemies; i++) this.spawnOne();
   }
 
   private spawnOne(): void {
@@ -227,19 +248,19 @@ export class ArenaScene extends Phaser.Scene {
       const under = this.grid.at(e.x, e.y);
       const burning = under === INK.VIOLET || under === other(e.color);
       if (burning) {
-        e.hp -= T.inkDps * dt;
+        e.hp -= this.s.inkDps * dt;
         if (e.hp <= 0) {
           this.kill(e, now);
           continue;
         }
       }
       const a = Math.atan2(p.y - e.y, p.x - e.x);
-      const v = e.speed * (burning ? T.inkSlow : 1) * dt;
+      const v = e.speed * (burning ? this.s.inkSlow : 1) * dt;
       e.x += Math.cos(a) * v;
       e.y += Math.sin(a) * v;
 
       const d = Math.hypot(p.x - e.x, p.y - e.y);
-      const touch = e.r + T.playerRadius;
+      const touch = e.r + this.s.playerRadius;
       if (d < touch) {
         if (e.color !== p.color) this.hurtPlayer(e, now);
         else {
@@ -287,9 +308,10 @@ export class ArenaScene extends Phaser.Scene {
     e.dead = true;
     this.kills++;
     sfx.splat(e.kind);
-    // The blob bursts into its own ink. It never overprints: otherwise every ink kill
-    // lands on the opposite ink it died on and sets off a blast that empties the arena.
-    this.grid.paintCircle(e.x, e.y, KINDS[e.kind].splat, e.color, now, false);
+    // The blob bursts into its own ink. By default it never overprints: otherwise every
+    // ink kill lands on the opposite ink it died on and sets off a blast that empties the
+    // arena. The Wet Splat upgrade turns that chain back on as a late-run power spike.
+    this.grid.paintCircle(e.x, e.y, KINDS[e.kind].splat, e.color, now, this.s.chainSplat === 1);
     for (let i = 0; i < 6; i++) {
       const a = Math.random() * Math.PI * 2;
       const dot = this.add.circle(e.x, e.y, Phaser.Math.Between(2, 4), hexOf(e.color)).setDepth(5);
@@ -310,18 +332,22 @@ export class ArenaScene extends Phaser.Scene {
 
   private blast(b: Blast): void {
     const now = this.elapsed * 1000;
-    const fill = this.add.circle(b.x, b.y, b.r, COLORS.violet, 0.4).setDepth(5).setBlendMode(Phaser.BlendModes.MULTIPLY);
-    this.tweens.add({ targets: fill, scale: { from: 0.3, to: 1 }, alpha: 0, duration: 380, onComplete: () => fill.destroy() });
+    const fill = this.add.circle(b.x, b.y, b.r, COLORS.violet, 0.55).setDepth(5);
+    this.tweens.add({ targets: fill, scale: { from: 0.3, to: 1 }, alpha: 0, duration: 420, onComplete: () => fill.destroy() });
+    const core = this.add.circle(b.x, b.y, Math.max(10, b.r * 0.35), 0xffffff, 0.9).setDepth(5);
+    this.tweens.add({ targets: core, scale: { from: 1, to: 0.2 }, alpha: 0, duration: 160, onComplete: () => core.destroy() });
     const ring = this.add.circle(b.x, b.y, b.r).setStrokeStyle(5, COLORS.violet).setDepth(5);
     this.tweens.add({ targets: ring, scale: { from: 0.5, to: 1.08 }, alpha: 0, duration: 420, onComplete: () => ring.destroy() });
     this.cameras.main.shake(110, 0.003 + b.r / 50000);
     sfx.blast(b.r);
 
+    // Small patches still explode (nothing vanishes silently) but hit softer.
+    const damage = this.s.blastDamage * Math.min(1, 0.4 + b.cells / this.s.fullBlastCells);
     let hit = 0;
     for (const e of this.enemies) {
       if (e.dead) continue;
       if (Math.hypot(e.x - b.x, e.y - b.y) > b.r + e.r) continue;
-      e.hp -= T.blastDamage;
+      e.hp -= damage;
       e.flashUntil = now + 90;
       if (e.hp <= 0) {
         this.kill(e, now);
@@ -341,19 +367,102 @@ export class ArenaScene extends Phaser.Scene {
     this.hudRing = this.add.circle(34, 34, 18, COLORS.pink).setStrokeStyle(4, COLORS.ink).setDepth(10);
     this.add.text(34, 62, 'SPACE', text(11)).setOrigin(0.5).setDepth(10);
     this.add.text(W - 16, 46, 'M mute', text(11)).setOrigin(1, 0).setDepth(10).setAlpha(0.5);
+    this.buildDrops();
+    this.hudTime = this.add.text(W / 2, 14, '0:00', text(26)).setOrigin(0.5, 0).setDepth(10);
+    this.hudWave = this.add.text(W / 2, 46, 'wave 1', text(12)).setOrigin(0.5, 0).setDepth(10);
+    this.add.rectangle(W / 2 - 60, 64, 120, 4, COLORS.ink, 0.15).setOrigin(0, 0.5).setDepth(10);
+    this.hudWaveBar = this.add.rectangle(W / 2 - 60, 64, 120, 4, COLORS.ink).setOrigin(0, 0.5).setDepth(10);
+    this.hudKills = this.add.text(W - 16, 14, '0', text(26)).setOrigin(1, 0).setDepth(10);
+  }
+
+  /** HP drops; rebuilt when Spare Drop raises max HP. */
+  private buildDrops(): void {
+    for (const d of this.hudDrops) d.destroy();
     this.hudDrops = [];
-    for (let i = 0; i < T.playerHp; i++) {
+    for (let i = 0; i < this.s.playerHp; i++) {
       this.hudDrops.push(this.add.circle(72 + i * 20, 34, 7, COLORS.ink).setStrokeStyle(2, COLORS.ink).setDepth(10));
     }
-    this.hudTime = this.add.text(W / 2, 14, '0:00', text(26)).setOrigin(0.5, 0).setDepth(10);
-    this.hudKills = this.add.text(W - 16, 14, '0', text(26)).setOrigin(1, 0).setDepth(10);
   }
 
   private updateHud(): void {
     this.hudRing.setFillStyle(hexOf(this.p.color));
     this.hudDrops.forEach((d, i) => d.setFillStyle(COLORS.ink, i < this.p.hp ? 1 : 0));
     this.hudTime.setText(fmt(this.elapsed));
-    this.hudKills.setText(`${this.kills} blobs`);
+    this.hudKills.setText(blobs(this.kills));
+    this.hudWave.setText(`wave ${this.wave}`);
+    const start = this.waveEnd - this.s.waveSeconds;
+    this.hudWaveBar.width = 120 * Phaser.Math.Clamp((this.elapsed - start) / this.s.waveSeconds, 0, 1);
+  }
+
+  // ---------- upgrades ----------
+
+  /** End of a wave: freeze the arena and offer up to 3 upgrades that are not maxed. */
+  private openPicker(): void {
+    const open = UPGRADES.filter((u) => (this.levels[u.id] ?? 0) < u.max);
+    if (open.length === 0) {
+      this.nextWave();
+      return;
+    }
+    this.choices = Phaser.Utils.Array.Shuffle(open.slice()).slice(0, 3);
+    this.picking = true;
+    sfx.swap(INK.TEAL);
+
+    const c = this.add.container(0, 0).setDepth(30);
+    c.add(this.add.rectangle(0, 0, W, H, COLORS.paper, 0.9).setOrigin(0));
+    c.add(this.add.text(W / 2, 92, `WAVE ${this.wave} DONE`, text(40, { color: '#5a2d82' })).setOrigin(0.5));
+    c.add(this.add.text(W / 2, 134, 'pick one: press 1, 2, 3 or click', text(16)).setOrigin(0.5));
+
+    const cw = 250;
+    const gap = 28;
+    const x0 = (W - (cw * this.choices.length + gap * (this.choices.length - 1))) / 2;
+    this.choices.forEach((u, i) => {
+      const x = x0 + i * (cw + gap);
+      const y = 180;
+      const lvl = this.levels[u.id] ?? 0;
+      const card = this.add.rectangle(x, y, cw, 230, 0xffffff, 0.75).setOrigin(0).setStrokeStyle(3, COLORS.ink);
+      card.setInteractive({ useHandCursor: true });
+      card.on('pointerover', () => card.setStrokeStyle(5, i % 2 ? COLORS.teal : COLORS.pink));
+      card.on('pointerout', () => card.setStrokeStyle(3, COLORS.ink));
+      // pointerup, not pointerdown: the scene-wide pointerdown swaps ink.
+      card.on('pointerup', () => this.pick(i));
+      c.add(card);
+      c.add(this.add.text(x + 14, y + 12, `${i + 1}`, text(28, { color: i % 2 ? '#2fa6c0' : '#ff5fa2' })));
+      c.add(this.add.text(x + 14, y + 56, u.name, text(22, { wordWrap: { width: cw - 28 } })));
+      c.add(this.add.text(x + 14, y + 100, u.text, text(15, { fontStyle: 'normal', wordWrap: { width: cw - 28 } })));
+      c.add(this.add.text(x + 14, y + 196, lvl === 0 ? `new  (max ${u.max})` : `level ${lvl + 1} of ${u.max}`, text(13)).setAlpha(0.7));
+    });
+    this.picker = c;
+  }
+
+  private pick(i: number): void {
+    if (!this.picking) return;
+    const u = this.choices[i];
+    if (!u) return;
+    this.levels[u.id] = (this.levels[u.id] ?? 0) + 1;
+    u.apply(this.s);
+    if (u.id === 'drop') {
+      this.p.hp = Math.min(this.s.playerHp, this.p.hp + 1);
+      this.buildDrops();
+    }
+    sfx.swap(INK.PINK);
+    this.picker?.destroy();
+    this.picker = null;
+    this.picking = false;
+    this.nextWave();
+  }
+
+  private nextWave(): void {
+    this.wave++;
+    this.waveEnd = this.elapsed + this.s.waveSeconds;
+    // A moment of grace: blobs were frozen right next to you while you picked.
+    this.p.invulnUntil = this.elapsed * 1000 + 1200;
+    const banner = this.add.text(W / 2, H / 2 - 40, `WAVE ${this.wave}`, text(44, { color: '#5a2d82' })).setOrigin(0.5).setDepth(9);
+    this.tweens.add({ targets: banner, alpha: 0, y: H / 2 - 80, duration: 1100, onComplete: () => banner.destroy() });
+  }
+
+  private upgradeSummary(): string {
+    const taken = UPGRADES.filter((u) => this.levels[u.id]).map((u) => (this.levels[u.id] > 1 ? `${u.name} ${this.levels[u.id]}` : u.name));
+    return taken.length ? taken.join(', ') : 'none';
   }
 
   private endRun(won: boolean): void {
@@ -363,10 +472,10 @@ export class ArenaScene extends Phaser.Scene {
     this.add.rectangle(0, 0, W, H, COLORS.paper, 0.86).setOrigin(0).setDepth(20);
     this.add.text(W / 2, 180, won ? 'PRINT RUN COMPLETE' : 'SMUDGED', text(56, { color: won ? '#2fa6c0' : '#ff5fa2' })).setOrigin(0.5).setDepth(21);
     this.add
-      .text(W / 2, 290, `survived ${fmt(this.elapsed)}\n${this.kills} blobs\nbiggest overprint: ${this.bestBlast}`, text(24, { align: 'center' }))
+      .text(W / 2, 290, `survived ${fmt(this.elapsed)}, wave ${this.wave}\n${blobs(this.kills)}\nbiggest overprint: ${this.bestBlast}\nupgrades: ${this.upgradeSummary()}`, text(20, { align: 'center', wordWrap: { width: 820 } }))
       .setOrigin(0.5)
       .setDepth(21);
-    this.add.text(W / 2, 410, 'R to reprint', text(22)).setOrigin(0.5).setDepth(21);
+    this.add.text(W / 2, 430, 'R to reprint', text(22)).setOrigin(0.5).setDepth(21);
   }
 }
 
@@ -374,6 +483,8 @@ export class ArenaScene extends Phaser.Scene {
 function spawnInterval(s: number): number {
   return Math.max(0.22, 1.1 - s * 0.006);
 }
+
+const blobs = (n: number) => `${n} ${n === 1 ? 'blob' : 'blobs'}`;
 
 function fmt(s: number): string {
   const m = Math.floor(s / 60);
