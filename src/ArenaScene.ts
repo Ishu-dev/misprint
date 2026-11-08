@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, FONT, H, INK, KINDS, W, freshStats, hexOf, other, type InkColor, type Kind, type Stats } from './config';
+import { CELL, COLORS, FONT, H, INK, KINDS, W, freshStats, hexOf, other, type InkColor, type Kind, type Stats } from './config';
 import { UPGRADES, type Upgrade } from './upgrades';
 import { InkGrid, type Blast } from './InkGrid';
 import { makeTextures } from './textures';
@@ -64,6 +64,15 @@ export class ArenaScene extends Phaser.Scene {
   private picker: Phaser.GameObjects.Container | null = null;
   private choices: Upgrade[] = [];
 
+  // Touch: drag anywhere to roll (a floating stick), tap or press SWAP to change ink.
+  private touchMode = false;
+  private stickId: number | null = null;
+  private stickOrigin = { x: 0, y: 0, t: 0 };
+  private stickVec = { x: 0, y: 0 };
+  private stickGfx!: Phaser.GameObjects.Graphics;
+  private swapBtn!: Phaser.GameObjects.Container;
+  private swapBtnDisc!: Phaser.GameObjects.Arc;
+
   private hudRing!: Phaser.GameObjects.Arc;
   private hudDrops: Phaser.GameObjects.Arc[] = [];
   private hudTime!: Phaser.GameObjects.Text;
@@ -111,7 +120,17 @@ export class ArenaScene extends Phaser.Scene {
     kb.on('keydown-R', () => {
       if (this.over) this.scene.restart();
     });
-    this.input.on('pointerdown', () => this.swap());
+    this.input.addPointer(2);
+    this.input.on('pointerdown', (ptr: Phaser.Input.Pointer) => this.pointerDown(ptr));
+    this.input.on('pointermove', (ptr: Phaser.Input.Pointer) => this.pointerMove(ptr));
+    this.input.on('pointerup', (ptr: Phaser.Input.Pointer) => this.pointerUp(ptr));
+    this.stickGfx = this.add.graphics().setDepth(15);
+    this.swapBtnDisc = this.add.circle(0, 0, 46, COLORS.teal, 0.85).setStrokeStyle(4, COLORS.ink);
+    this.swapBtn = this.add
+      .container(W - 76, H - 76, [this.swapBtnDisc, this.add.text(0, 0, 'SWAP', { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: '#2a2335' }).setOrigin(0.5)])
+      .setDepth(16)
+      .setVisible(false);
+    if (window.matchMedia?.('(pointer: coarse)').matches) this.enableTouch();
 
     this.buildHud();
     this.syncPlayer();
@@ -143,6 +162,8 @@ export class ArenaScene extends Phaser.Scene {
     this.grid.draw(this.inkGfx, now);
     this.syncPlayer();
     this.updateHud();
+    this.drawStick();
+    this.swapBtnDisc.setFillStyle(hexOf(other(this.p.color)), 0.85);
 
     if (this.elapsed >= this.s.runSeconds) this.endRun(true);
     else if (this.elapsed >= this.waveEnd) this.openPicker();
@@ -160,14 +181,83 @@ export class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: this.body, scale: { from: 1.35, to: 1 }, duration: 160 });
   }
 
+  // ---------- touch ----------
+
+  private enableTouch(): void {
+    if (this.touchMode) return;
+    this.touchMode = true;
+    this.swapBtn.setVisible(!this.over);
+  }
+
+  private onSwapBtn(ptr: Phaser.Input.Pointer): boolean {
+    return this.swapBtn.visible && Phaser.Math.Distance.Between(ptr.x, ptr.y, this.swapBtn.x, this.swapBtn.y) < 56;
+  }
+
+  private pointerDown(ptr: Phaser.Input.Pointer): void {
+    if (!ptr.wasTouch) {
+      this.swap(); // mouse click swaps, as before
+      return;
+    }
+    this.enableTouch();
+    if (this.over) {
+      this.scene.restart();
+      return;
+    }
+    if (this.picking) return; // upgrade cards take the tap on pointerup
+    if (this.onSwapBtn(ptr)) {
+      this.swap();
+      return;
+    }
+    if (this.stickId === null) {
+      this.stickId = ptr.id;
+      this.stickOrigin = { x: ptr.x, y: ptr.y, t: this.time.now };
+      this.stickVec = { x: 0, y: 0 };
+    } else {
+      this.swap(); // second finger anywhere swaps
+    }
+  }
+
+  private pointerMove(ptr: Phaser.Input.Pointer): void {
+    if (ptr.id !== this.stickId) return;
+    this.stickVec = { x: ptr.x - this.stickOrigin.x, y: ptr.y - this.stickOrigin.y };
+  }
+
+  private pointerUp(ptr: Phaser.Input.Pointer): void {
+    if (ptr.id !== this.stickId) return;
+    // A quick tap that barely moved counts as a swap.
+    if (this.time.now - this.stickOrigin.t < 220 && Math.hypot(this.stickVec.x, this.stickVec.y) < 14) this.swap();
+    this.stickId = null;
+    this.stickVec = { x: 0, y: 0 };
+  }
+
+  private drawStick(): void {
+    const g = this.stickGfx;
+    g.clear();
+    if (this.stickId === null) return;
+    const { x, y } = this.stickOrigin;
+    const len = Math.hypot(this.stickVec.x, this.stickVec.y);
+    const k = len > 60 ? 60 / len : 1;
+    g.lineStyle(3, COLORS.ink, 0.35).strokeCircle(x, y, 60);
+    g.fillStyle(COLORS.ink, 0.3).fillCircle(x + this.stickVec.x * k, y + this.stickVec.y * k, 24);
+  }
+
   private movePlayer(dt: number, now: number): void {
     const k = this.keys;
     let dx = (k.D.isDown || k.RIGHT.isDown ? 1 : 0) - (k.A.isDown || k.LEFT.isDown ? 1 : 0);
     let dy = (k.S.isDown || k.DOWN.isDown ? 1 : 0) - (k.W.isDown || k.UP.isDown ? 1 : 0);
+    let speed = 1;
+    if (dx === 0 && dy === 0 && this.stickId !== null) {
+      const sl = Math.hypot(this.stickVec.x, this.stickVec.y);
+      if (sl > 10) {
+        dx = this.stickVec.x;
+        dy = this.stickVec.y;
+        speed = Math.min(1, sl / 50);
+      }
+    }
     if (dx === 0 && dy === 0) return;
     const len = Math.hypot(dx, dy);
-    dx /= len;
-    dy /= len;
+    dx = (dx / len) * speed;
+    dy = (dy / len) * speed;
     const m = this.s.playerRadius;
     const ox = this.p.x;
     const oy = this.p.y;
@@ -182,8 +272,22 @@ export class ArenaScene extends Phaser.Scene {
       const t = i / steps;
       const rx = ox + (this.p.x - ox) * t + Math.cos(this.p.angle) * 12;
       const ry = oy + (this.p.y - oy) * t + Math.sin(this.p.angle) * 12;
-      this.grid.paintCircle(rx, ry, this.s.rollerRadius, this.p.color, now);
+      this.paintRoller(rx, ry, now);
     }
+  }
+
+  /**
+   * Stamp the roller on the ink grid. A free disc covers 1 or 2 cells depending on where it
+   * sits inside a cell, so vertical and horizontal stripes came out different widths. Snap the
+   * stamp to a cell corner (even widths) or cell centre (odd widths) so every stripe is exactly
+   * rollerCells wide.
+   */
+  private paintRoller(x: number, y: number, now: number): void {
+    const w = this.s.rollerCells;
+    const half = w % 2 === 0 ? 0 : 0.5;
+    const sx = (Math.round(x / CELL - half) + half) * CELL;
+    const sy = (Math.round(y / CELL - half) + half) * CELL;
+    this.grid.paintCircle(sx, sy, (w / 2) * CELL - 0.5, this.p.color, now);
   }
 
   private syncPlayer(): void {
@@ -534,7 +638,10 @@ export class ArenaScene extends Phaser.Scene {
       .text(W / 2, 290, `survived ${fmt(this.elapsed)}, wave ${this.wave}\n${blobs(this.kills)}\nbiggest overprint: ${this.bestBlast}\nupgrades: ${this.upgradeSummary()}`, text(20, { align: 'center', wordWrap: { width: 820 } }))
       .setOrigin(0.5)
       .setDepth(21);
-    this.add.text(W / 2, 430, 'R to reprint', text(22)).setOrigin(0.5).setDepth(21);
+    this.add.text(W / 2, 430, this.touchMode ? 'tap to reprint' : 'R to reprint', text(22)).setOrigin(0.5).setDepth(21);
+    this.swapBtn.setVisible(false);
+    this.stickId = null;
+    this.stickGfx.clear();
   }
 }
 

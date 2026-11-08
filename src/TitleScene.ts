@@ -9,6 +9,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     makeTextures(this);
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
     this.add.image(0, 0, 'paper').setOrigin(0);
     const title = { fontFamily: FONT, fontSize: '96px', fontStyle: 'bold' };
     this.add.text(W / 2 + 4, 170 + 3, 'MISPRINT', { ...title, color: '#2fa6c0' }).setOrigin(0.5).setAlpha(0.85);
@@ -20,9 +21,9 @@ export class TitleScene extends Phaser.Scene {
         W / 2,
         320,
         [
-          'WASD / arrows   roll',
-          'SPACE / SHIFT   swap ink',
-          'M               mute sound',
+          ...(coarse
+            ? ['drag anywhere   roll', 'tap or SWAP     swap ink']
+            : ['WASD / arrows   roll', 'SPACE / SHIFT   swap ink', 'M               mute sound']),
           '',
           'Blobs of your ink colour cannot hurt you.',
           'Your trail hurts blobs of the other colour.',
@@ -33,7 +34,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const go = this.add
-      .text(W / 2, H - 60, 'press SPACE to print', { ...body, fontSize: '24px', fontStyle: 'bold' })
+      .text(W / 2, H - 60, coarse ? 'tap to print' : 'press SPACE to print', { ...body, fontSize: '24px', fontStyle: 'bold' })
       .setOrigin(0.5);
     this.tweens.add({ targets: go, alpha: 0.25, yoyo: true, repeat: -1, duration: 600 });
     this.cameras.main.setBackgroundColor(COLORS.paper);

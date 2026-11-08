@@ -9,7 +9,7 @@ export interface Upgrade {
 }
 
 export const UPGRADES: Upgrade[] = [
-  { id: 'wide', name: 'Wide Roller', text: 'Your roller paints a wider stripe.', max: 3, apply: (s) => void (s.rollerRadius += 4) },
+  { id: 'wide', name: 'Wide Roller', text: 'Your roller paints a wider stripe.', max: 3, apply: (s) => void (s.rollerCells += 1) },
   { id: 'fuse', name: 'Quick Fuse', text: 'Violet goes off 120 ms sooner after you stop overprinting.', max: 3, apply: (s) => void (s.fuseMs = Math.max(300, s.fuseMs - 120)) },
   { id: 'feet', name: 'Light Feet', text: 'Roll 12% faster.', max: 3, apply: (s) => void (s.playerSpeed *= 1.12) },
   { id: 'long', name: 'Archival Ink', text: 'Ink lasts 2.5 s longer before it fades.', max: 3, apply: (s) => void (s.inkLifeMs += 2500) },

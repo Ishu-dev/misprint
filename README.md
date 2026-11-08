@@ -1,6 +1,8 @@
 # Misprint
 
-**Play: https://ishu-dev.github.io/misprint/**
+**Play: https://ishu-dev.github.io/misprint/** or on itch.io: https://ishu-dev.itch.io/misprint
+
+![Misprint gameplay](docs/gameplay.gif)
 
 Top-down survival prototype in a two-colour risograph style. Vite + TypeScript + Phaser 3.90.
 
@@ -15,6 +17,7 @@ Pushing to `main` deploys to GitHub Pages via `.github/workflows/pages.yml`.
 - Space / Shift / click: swap ink (pink or teal)
 - M: mute music and sound effects
 - R: restart after a run ends
+- Phone or tablet: drag anywhere to roll (floating stick), tap or press SWAP to swap ink, a second finger also swaps. Tap to restart.
 
 ## Rules in the prototype
 - Ink swap: blobs of your current colour cannot hurt you.
@@ -24,6 +27,6 @@ Pushing to `main` deploys to GitHub Pages via `.github/workflows/pages.yml`.
 - Waves: every 40 s the arena freezes and you pick 1 of 3 upgrades (keys 1/2/3 or click).
 
 ## Upgrades
-Wide Roller, Quick Fuse, Light Feet, Archival Ink, Caustic Ink, Bleed Edge (3 levels each), Heavy Violet, Hair Trigger (2 each), Spare Drop (3), Wet Splat (1: dead blobs overprint, so blasts chain). Defined in `src/upgrades.ts`; they change a per-run copy of the tuning (`freshStats()` in `src/config.ts`).
+Wide Roller (+1 cell of stripe width per level), Quick Fuse, Light Feet, Archival Ink, Caustic Ink, Bleed Edge (3 levels each), Heavy Violet, Hair Trigger (2 each), Spare Drop (3), Wet Splat (1: dead blobs overprint, so blasts chain). Defined in `src/upgrades.ts`; they change a per-run copy of the tuning (`freshStats()` in `src/config.ts`).
 
 Base tuning is in `src/config.ts` (`T` and `KINDS`). Art is generated from shapes in `src/textures.ts`; no asset files yet.

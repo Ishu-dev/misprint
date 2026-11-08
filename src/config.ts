@@ -23,7 +23,7 @@ export const T = {
   playerHp: 5,
   invulnMs: 900,
   swapCooldownMs: 400,
-  rollerRadius: 11,
+  rollerCells: 2, // stripe width in ink cells, the same whichever way you roll
   inkLifeMs: 7000, // pink/teal ink fades after this
   fuseMs: 700, // violet overprint explodes this long after it first appears
   fuseHoldMaxMs: 1500, // a patch you keep growing still goes off at most this long after the fuse
